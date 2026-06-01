@@ -6,6 +6,10 @@ import java.util.Random;
 import java.io.File;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
+// Import tambahan untuk audio library bawaan Java
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.AudioInputStream;
+import javax.sound.sampled.Clip;
 
 public class CosmicVanguard extends JPanel implements ActionListener, KeyListener {
 
@@ -17,12 +21,11 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
     private static final int STATE_MENU = 0;
     private static final int STATE_GAMEPLAY = 1;
     private static final int STATE_GAMEOVER = 2;
-    private int gameState = STATE_MENU; // Default dimulai dari Menu Utama
+    private int gameState = STATE_MENU; 
 
-    // Timer untuk Game Loop (60 FPS)
     private Timer timer;
 
-    // Status Pemain (Phoenix-X Balanced Variant)
+    // Status Pemain
     private BufferedImage playerImage;
     private BufferedImage playerRedImage;
     private BufferedImage alienImage;
@@ -40,33 +43,30 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
     private int energyBar = 0;
     private final int MAX_ENERGY = 100;
 
-    // Polarity: true = BIRU (Plasma), false = MERAH (Antimateri)
     private boolean isBluePolarity = true;
-
-    // Kontrol Pergerakan
     private boolean up, down, left, right;
 
-    // List untuk Objek Game
     private ArrayList<Bullet> playerBullets = new ArrayList<>();
     private ArrayList<AlienBullet> alienBullets = new ArrayList<>();
     private ArrayList<Alien> aliens = new ArrayList<>();
     private ArrayList<Star> stars = new ArrayList<>();
     private ArrayList<Particle> particles = new ArrayList<>();
 
-    // Variabel Logika Game & Mekanik Tambahan Boss
     private int score = 0;
     private Random random = new Random();
     private int spawnCounter = 0;
     private int shootCooldown = 0;
     private final int SHOOT_DELAY = 12;
 
-    // Status Mekanik BOSS
     private boolean bossActive = false;
     private int bossX = 300, bossY = -100; 
     private int bossHp = 0;
     private final int BOSS_MAX_HP = 500;
     private int bossSpeedX = 3;
     private int bossShootCounter = 0;
+
+    // --- AUDIO CLIP MANAGEMENT ---
+    private Clip bgmClip; // Untuk BGM Looping
 
     public CosmicVanguard() {
         setPreferredSize(new Dimension(WIDTH, HEIGHT));
@@ -84,23 +84,74 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
             redBulletImage = ImageIO.read(new File("redbullet.png"));
             bossImage = ImageIO.read(new File("boss.png"));
         } catch (Exception ex) {
-            System.err.println("Gagal memuat gambar pesawat/musuh: " + ex.getMessage());
+            System.err.println("Gagal memuat gambar: " + ex.getMessage());
         }
 
-        // Mengisi layar dengan bintang awal (tetap bergerak di background menu/game)
+        // Jalankan BGM Techno otomatis saat masuk Menu Utama
+        playBackgroundMusic("bgm_techno.wav");
+
         for (int i = 0; i < 100; i++) {
             stars.add(new Star(random.nextInt(WIDTH), random.nextInt(HEIGHT), random.nextInt(3) + 1));
         }
 
-        // Memulai Game Loop
         timer = new Timer(16, this);
         timer.start();
+    }
+
+    // --- AUDIO SYSTEM METHODS ---
+    
+    // 1. Method untuk memutar BGM secara terus menerus (Looping)
+    private void playBackgroundMusic(String filename) {
+        try {
+            File musicPath = new File(filename);
+            if (musicPath.exists()) {
+                AudioInputStream audioInput = AudioSystem.getAudioInputStream(musicPath);
+                bgmClip = AudioSystem.getClip();
+                bgmClip.open(audioInput);
+                bgmClip.loop(Clip.LOOP_CONTINUOUSLY); // Mengatur agar lagu mengulang otomatis
+                bgmClip.start();
+            } else {
+                System.err.println("File BGM tidak ditemukan: " + filename);
+            }
+        } catch (Exception ex) {
+            System.err.println("Gagal memutar BGM: " + ex.getMessage());
+        }
+    }
+
+    // 2. Method untuk menghentikan BGM (misal saat Game Over jika ingin hening atau ganti lagu)
+    private void stopBackgroundMusic() {
+        if (bgmClip != null && bgmClip.isRunning()) {
+            bgmClip.stop();
+        }
+    }
+
+    // 3. Method khusus SFX (One-shot sound effect). Berjalan asinkronus agar tidak membuat game patah-patah
+    private void playSoundEffect(String filename) {
+        new Thread(() -> {
+            try {
+                File soundPath = new File(filename);
+                if (soundPath.exists()) {
+                    AudioInputStream audioInput = AudioSystem.getAudioInputStream(soundPath);
+                    Clip clip = AudioSystem.getClip();
+                    clip.open(audioInput);
+                    clip.start();
+                    
+                    // Listener untuk menutup resource clip setelah audio selesai diputar agar tidak memakan memori RAM
+                    clip.addLineListener(event -> {
+                        if (event.getType() == javax.sound.sampled.LineEvent.Type.STOP) {
+                            clip.close();
+                        }
+                    });
+                }
+            } catch (Exception ex) {
+                System.err.println("Gagal memutar SFX: " + ex.getMessage());
+            }
+        }).start();
     }
 
     // --- GAME LOOP (UPDATE & RENDERING) ---
     @Override
     public void actionPerformed(ActionEvent e) {
-        // Efek kosmetik bintang dan partikel tetap di-update di setiap state agar background hidup
         updateStars();
         updateParticles();
 
@@ -113,7 +164,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
                     shakeDuration--;
                 }
 
-                // Cek kondisi aktivasi Boss
                 if (score >= 5000 && !bossActive && bossHp == 0) {
                     triggerBossSpawn();
                 }
@@ -125,14 +175,13 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
                 }
                 checkCollisions();
             } else {
-                // Jika HP habis, ubah status ke Game Over
                 gameState = STATE_GAMEOVER;
+                // Opsional: stopBackgroundMusic(); // jika ingin musik berhenti saat game over
             }
         }
         repaint();
     }
 
-    // --- LOGIKA UPDATE GAME ---
     private void triggerBossSpawn() {
         bossActive = true;
         bossHp = BOSS_MAX_HP;
@@ -153,6 +202,10 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
 
         if (shootCooldown == 0) {
             playerBullets.add(new Bullet(playerX + 12, playerY, isBluePolarity)); 
+            
+            // memicu suara laser tipis setiap menembak otomatis
+            playSoundEffect("sfx_laser.wav"); 
+            
             shootCooldown = SHOOT_DELAY;
         }
     }
@@ -167,7 +220,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
             }
 
             bossShootCounter++;
-
             boolean isPhase2 = bossHp < (BOSS_MAX_HP / 2);
             int shootInterval = isPhase2 ? 15 : 25; 
 
@@ -196,7 +248,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
         for (int i = 0; i < stars.size(); i++) {
             Star s = stars.get(i);
             s.y += s.speed;
-
             if (s.y > HEIGHT) {
                 s.y = 0;
                 s.x = random.nextInt(WIDTH);
@@ -210,7 +261,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
             p.x += p.dx;
             p.y += p.dy;
             p.lifetime--;
-
             if (p.lifetime <= 0) {
                 particles.remove(i--);
             }
@@ -233,7 +283,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
 
     private void updateAliens() {
         int extraSpeed = score / 2000;
-
         for (int i = 0; i < aliens.size(); i++) {
             Alien a = aliens.get(i);
             a.y += (2 + extraSpeed);
@@ -251,7 +300,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
     private void spawnAliens() {
         spawnCounter++;
         int currentSpawnInterval = Math.max(20, 60 - (score / 1000) * 5);
-
         if (spawnCounter % currentSpawnInterval == 0) {
             int spawnX = random.nextInt(WIDTH - 50);
             aliens.add(new Alien(spawnX, -40));
@@ -292,7 +340,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
 
             if (bossActive) {
                 Rectangle bossRect = new Rectangle(bossX, bossY, 200, 100);
-
                 if (bRect.intersects(bossRect)) {
                     bossHp -= 10; 
                     playerBullets.remove(i--);
@@ -302,6 +349,8 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
                     if (bossHp <= 0) {
                         bossActive = false;
                         score += 2500; 
+                        // Memicu ledakan heavy bass saat Boss hancur
+                        playSoundEffect("sfx_explosion.wav");
 
                         for (int k = 0; k < 60; k++) {
                             particles.add(new Particle(bossX + 100, bossY + 50, new Color(255, 50, 0)));
@@ -331,33 +380,29 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
         }
     }
 
-    // --- VISUAL (GRAPHICS & STATE RENDERING) ---
+    // --- VISUAL RENDERING ---
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
         Graphics2D g2d = (Graphics2D) g;
         g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-        // Efek screen shake
         if (gameState == STATE_GAMEPLAY && shakeDuration > 0) {
             int offsetX = random.nextInt(shakeIntensity * 2) - shakeIntensity;
             int offsetY = random.nextInt(shakeIntensity * 2) - shakeIntensity;
             g2d.translate(offsetX, offsetY);
         }
 
-        // 1. Gambar Bintang Belakang (Tampil di semua state)
         g2d.setColor(Color.WHITE);
         for (Star s : stars) {
             g2d.fillRect(s.x, s.y, s.speed, s.speed);
         }
 
-        // 2. Gambar Efek Partikel Ledakan (Tampil di semua state jika ada)
         for (Particle p : particles) {
             g2d.setColor(p.color);
             g2d.fillRect((int)p.x, (int)p.y, 4, 4);
         }
 
-        // --- SWITCH RENDERING BERDASARKAN STATE ---
         if (gameState == STATE_MENU) {
             drawMenuScreen(g2d);
         } else if (gameState == STATE_GAMEPLAY) {
@@ -367,9 +412,7 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
         }
     }
 
-    // --- SCREEN RENDERING METHODS ---
     private void drawMenuScreen(Graphics2D g2d) {
-        // Judul Game Utama
         g2d.setColor(new Color(0, 200, 255));
         g2d.setFont(new Font("Courier New", Font.BOLD, 50));
         g2d.drawString("COSMIC VANGUARD", WIDTH / 2 - 210, HEIGHT / 2 - 120);
@@ -378,12 +421,11 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
         g2d.setFont(new Font("Arial", Font.ITALIC | Font.BOLD, 20));
         g2d.drawString("Neo-Earth Prototype", WIDTH / 2 - 95, HEIGHT / 2 - 85);
 
-        // Instruksi Mulai
         g2d.setColor(Color.YELLOW);
         g2d.setFont(new Font("Courier New", Font.BOLD, 22));
         g2d.drawString("TEKAN [ENTER] UNTUK MEMULAI GAME", WIDTH / 2 - 200, HEIGHT / 2 - 10);
 
-        // Kotak Panduan Kontrol
+        // Perbaikan perataan teks Panduan Kontrol agar rapi & rata kiri
         g2d.setColor(new Color(255, 255, 255, 40));
         g2d.fillRoundRect(WIDTH / 2 - 250, HEIGHT / 2 + 40, 500, 180, 15, 15);
         g2d.setColor(Color.WHITE);
@@ -397,14 +439,13 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
         g2d.setFont(new Font("Arial", Font.PLAIN, 14));
         g2d.setColor(Color.WHITE);
         g2d.drawString("• Bergerak          : W, A, S, D  atau  Tombol Panah", WIDTH / 2 - 230, HEIGHT / 2 + 100);
-        g2d.drawString("• Ganti Mode      : [SPACEBAR] (Plasma Biru / Anti-M Merah)", WIDTH / 2 - 230, HEIGHT / 2 + 120);
-        g2d.drawString("• Ultimate Skil     : [X] (Saat Energi POW 100%)", WIDTH / 2 - 230, HEIGHT / 2 + 140);
-        g2d.drawString("• Sistem Shield   : Serap peluru sewarna untuk isi POW & Skor!", WIDTH / 2 - 230, HEIGHT / 2 + 160);
-        g2d.drawString("                              Ketika terkena peluru warna berbeda mengurangi HP.", WIDTH / 2 - 230, HEIGHT / 2 + 180);
+        g2d.drawString("• Ganti Mode       : [SPACEBAR] (Plasma Biru / Anti-M Merah)", WIDTH / 2 - 230, HEIGHT / 2 + 120);
+        g2d.drawString("• Ultimate Skill    : [X] (Saat Energi POW 100%)", WIDTH / 2 - 230, HEIGHT / 2 + 140);
+        g2d.drawString("• Sistem Shield    : Serap peluru sewarna untuk isi POW & Skor!", WIDTH / 2 - 230, HEIGHT / 2 + 160);
+        g2d.drawString("  Ketika terkena peluru warna berbeda mengurangi HP.", WIDTH / 2 - 213, HEIGHT / 2 + 185);
     }   
 
     private void drawGameplayScreen(Graphics2D g2d) {
-        // 1. Gambar Pesawat Pemain & Perisai Neon
         Color polarityColor = isBluePolarity ? new Color(0, 200, 255) : new Color(255, 0, 100);
         g2d.setColor(polarityColor);
         g2d.setStroke(new BasicStroke(4));
@@ -425,7 +466,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
             g2d.fillPolygon(xPts, yPts, 3);
         }
 
-        // 2. Gambar Monster BOSS (Jika Sedang Aktif)
         if (bossActive) {
             if (bossImage != null) {
                 g2d.drawImage(bossImage, bossX, bossY, 200, 110, null);
@@ -438,7 +478,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
             g2d.drawRoundRect(bossX - 5, bossY - 5, 210, 120, 20, 20);
         }
 
-        // 3. Gambar Peluru Pemain
         for (Bullet b : playerBullets) {
             if (b.isBlue) {
                 if (bulletImage != null) {
@@ -457,7 +496,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
             }
         }
 
-        // 4. Gambar Alien Biasa
         if (!bossActive) {
             for (Alien a : aliens) {
                 if (alienImage != null) {
@@ -469,7 +507,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
             }
         }
         
-        // 5. Gambar Peluru Alien / Boss
         for (AlienBullet ab : alienBullets) {
             if (alienBulletImage != null && redBulletImage != null) {
                 if (ab.isBlue) {
@@ -494,7 +531,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
             }
         }
 
-        // 6. HUD (Heads-Up Display)
         Font retroFontSmall = new Font("Courier New", Font.BOLD, 14);
         Font retroFontLarge = new Font("Courier New", Font.BOLD, 16);
         g2d.setFont(retroFontSmall);
@@ -555,7 +591,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
             g2d.drawString("[TEKAN X (ULTIMATE)]", hpBarX + barWidth + 15, energyBarY + 15);
         }
 
-        // BOSS HP BAR
         if (bossActive) {
             int bossBarW = 300;
             int bossBarX = (WIDTH / 2) - (bossBarW / 2);
@@ -608,15 +643,12 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
     public void keyPressed(KeyEvent e) {
         int key = e.getKeyCode();
 
-        // 1. INPUT UNTUK MENU UTAMA
         if (gameState == STATE_MENU) {
             if (key == KeyEvent.VK_ENTER) {
-                restartGame(); // Reset data sebelum mulai bermain
+                restartGame(); 
                 gameState = STATE_GAMEPLAY;
             }
         }
-        
-        // 2. INPUT UNTUK GAMEPLAY
         else if (gameState == STATE_GAMEPLAY) {
             if (key == KeyEvent.VK_UP || key == KeyEvent.VK_W) up = true;
             if (key == KeyEvent.VK_DOWN || key == KeyEvent.VK_S) down = true;
@@ -631,8 +663,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
                 triggerSuperNovaUltimate();
             }
         } 
-        
-        // 3. INPUT UNTUK GAME OVER
         else if (gameState == STATE_GAMEOVER) {
             if (key == KeyEvent.VK_R) {
                 restartGame();
@@ -659,6 +689,10 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
     private void triggerSuperNovaUltimate() {
         shakeDuration = 25;   
         shakeIntensity = 12;
+
+        // Memicu ledakan heavy bass saat Ultimate dilepaskan
+        playSoundEffect("sfx_explosion.wav");
+
         if (bossActive) {
             bossHp -= 100; 
             for (int k = 0; k < 30; k++) {
@@ -724,7 +758,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
     class Bullet {
         int x, y;
         boolean isBlue; 
-        
         Bullet(int x, int y, boolean isBlue) { 
             this.x = x; 
             this.y = y; 
@@ -736,7 +769,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
         int x, y;
         int speed = 5;
         boolean isBlue;
-
         AlienBullet(int x, int y, boolean isBlue) {
             this.x = x;
             this.y = y;
@@ -752,7 +784,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
     class Star {
         int x, y;
         int speed;
-
         Star(int x, int y, int speed) {
             this.x = x;
             this.y = y;
@@ -764,12 +795,10 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
         double x, y, dx, dy;
         int lifetime;
         Color color;
-
         Particle(int x, int y, Color color) {
             this.x = x;
             this.y = y;
             this.color = color;
-
             Random r = new Random();
             this.dx = (r.nextDouble() - 0.5) * 6;
             this.dy = (r.nextDouble() - 0.5) * 6;
