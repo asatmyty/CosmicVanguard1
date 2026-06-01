@@ -51,6 +51,7 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
     private ArrayList<Alien> aliens = new ArrayList<>();
     private ArrayList<Star> stars = new ArrayList<>();
     private ArrayList<Particle> particles = new ArrayList<>();
+    private ArrayList<ItemDrop> itemDrops = new ArrayList<>();
 
     private int score = 0;
     private Random random = new Random();
@@ -78,8 +79,8 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
             playerImage = ImageIO.read(new File("Bplayer_ship.png"));
             playerRedImage = ImageIO.read(new File("Rplayer_ship1.png"));
             alienImage = ImageIO.read(new File("alien.png"));
-            bulletImage = ImageIO.read(new File("bullets.png"));
-            playerRedBulletImage = ImageIO.read(new File("rbullet.png"));
+            bulletImage = ImageIO.read(new File("bulletss.png"));
+            playerRedBulletImage = ImageIO.read(new File("Rbullets.png"));
             alienBulletImage = ImageIO.read(new File("ebullets.png"));
             redBulletImage = ImageIO.read(new File("redbullet.png"));
             bossImage = ImageIO.read(new File("boss.png"));
@@ -159,6 +160,7 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
             if (playerHp > 0) {
                 updatePlayer();
                 updateBullets();
+                updateItemDrops();
 
                 if (shakeDuration > 0) {
                     shakeDuration--;
@@ -195,20 +197,32 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
         if (down && playerY < HEIGHT - 50) playerY += playerSpeed;
         if (left && playerX > 0) playerX -= playerSpeed;
         if (right && playerX < WIDTH - 40) playerX += playerSpeed;
+        if (spawnCounter % 2 == 0) {
+
+
+        int trailX = playerX + 18; 
+        int trailY = playerY + 70; 
+
+        // Warna partikel disesuaikan dengan polaritas pesawat agar terlihat keren
+        Color trailColor = isBluePolarity ? new Color(0, 150, 255, 180) : new Color(255, 50, 50, 180);
+        
+        // Menambahkan partikel ke dalam ArrayList particles yang sudah ada
+        particles.add(new Particle(trailX, trailY, trailColor));
+        }
 
         if (shootCooldown > 0) {
-            shootCooldown--;
+        shootCooldown--;
         }
 
         if (shootCooldown == 0) {
-            playerBullets.add(new Bullet(playerX + 12, playerY, isBluePolarity)); 
-            
-            // memicu suara laser tipis setiap menembak otomatis
-            playSoundEffect("sfx_laser.wav"); 
-            
-            shootCooldown = SHOOT_DELAY;
+        playerBullets.add(new Bullet(playerX + 12, playerY, isBluePolarity));
+
+        // memicu suara laser tipis setiap menembak otomatis
+        playSoundEffect("sfx_laser.wav");
+
+        shootCooldown = SHOOT_DELAY;
         }
-    }
+        }
 
     private void updateBoss() {
         if (bossY < 60) {
@@ -266,7 +280,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
             }
         }
     }
-
     private void updateBullets() {
         for (int i = 0; i < playerBullets.size(); i++) {
             Bullet b = playerBullets.get(i);
@@ -296,6 +309,45 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
             if (a.y > HEIGHT) aliens.remove(i--);
         }
     }
+    private void updateItemDrops() {
+        for (int i = 0; i < itemDrops.size(); i++) {
+            ItemDrop item = itemDrops.get(i);
+            item.y += item.speed; // Item bergerak ke bawah
+
+            // Jika item melewati batas bawah layar, hapus dari memori
+            if (item.y > HEIGHT) {
+                itemDrops.remove(i--);
+            }
+        }
+    }
+
+    private void checkItemCollisions(Rectangle playerRect) {
+        for (int i = 0; i < itemDrops.size(); i++) {
+            ItemDrop item = itemDrops.get(i);
+            Rectangle itemRect = new Rectangle(item.x, item.y, 20, 20); // Ukuran hitbox item
+
+            if (playerRect.intersects(itemRect)) {
+                // Mainkan SFX jika ada (Opsional, pastikan filenya ada di folder project)
+                // playSoundEffect("sfx_pickup.wav"); 
+
+                if (item.type == ItemDrop.TYPE_HEAL) {
+                    playerHp += 25; // Menambah 25 HP
+                    if (playerHp > 100) playerHp = 100; // Batasi maksimal 100 HP
+                } else if (item.type == ItemDrop.TYPE_ENERGY) {
+                    energyBar += 20; // Menambah 20 POW
+                    if (energyBar > MAX_ENERGY) energyBar = MAX_ENERGY;
+                }
+
+                // Beri partikel bonus saat mengambil item agar terlihat memuaskan
+                Color effectColor = (item.type == ItemDrop.TYPE_HEAL) ? Color.GREEN : Color.ORANGE;
+                for (int k = 0; k < 15; k++) {
+                    particles.add(new Particle(item.x + 10, item.y + 10, effectColor));
+                }
+
+                itemDrops.remove(i--); // Hapus item setelah diambil
+            }
+        }
+    }
 
     private void spawnAliens() {
         spawnCounter++;
@@ -307,7 +359,17 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
     }
 
     private void checkCollisions() {
-        Rectangle playerRect = new Rectangle(playerX, playerY, 80, 100);
+        // Rectangle playerRect = new Rectangle(playerX, playerY, 80, 100);
+        // Ukuran hitbox tengah (bisa disesuaikan, misalnya 16x16 pixel)
+        int hitboxWidth = 30;
+        int hitboxHeight = 30;
+
+        // Menghitung posisi koordinat agar tepat berada di tengah aset pesawat (lebar 80, tinggi 100)
+        int hitboxX = playerX + (40 / 2) - (hitboxWidth / 2);
+        int hitboxY = playerY + (90 / 2) - (hitboxHeight / 2);
+
+        Rectangle playerRect = new Rectangle(hitboxX, hitboxY, hitboxWidth, hitboxHeight);
+        checkItemCollisions(playerRect);
 
         for (int i = 0; i < alienBullets.size(); i++) {
             AlienBullet ab = alienBullets.get(i);
@@ -372,7 +434,13 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
                         playerBullets.remove(i--);
                         score += 20;
                         bulletRemoved = true;
-                        break;
+                        if (random.nextInt(100) < 30) { 
+                        // 0 = Heal (40% dari total drop), 1 = Energy (60% dari total drop)
+                        int itemType = (random.nextInt(100) < 40) ? ItemDrop.TYPE_HEAL : ItemDrop.TYPE_ENERGY;
+                        itemDrops.add(new ItemDrop(a.x + 15, a.y + 15, itemType));
+                    }
+
+                    break;
                     }
                 }
             }
@@ -448,8 +516,8 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
     private void drawGameplayScreen(Graphics2D g2d) {
         Color polarityColor = isBluePolarity ? new Color(0, 200, 255) : new Color(255, 0, 100);
         g2d.setColor(polarityColor);
-        g2d.setStroke(new BasicStroke(4));
-        g2d.drawOval(playerX + 15, playerY + 25, 50, 50);
+        // g2d.setStroke(new BasicStroke(4));
+        // g2d.drawOval(playerX + 15, playerY + 25, 50, 50);
 
         BufferedImage currentShipImage = isBluePolarity ? playerImage : playerRedImage;
 
@@ -464,7 +532,8 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
             int[] xPts = {playerX + 20, playerX, playerX + 40};
             int[] yPts = {playerY, playerY + 40, playerY + 40};
             g2d.fillPolygon(xPts, yPts, 3);
-        }
+        } 
+        
 
         if (bossActive) {
             if (bossImage != null) {
@@ -528,6 +597,29 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
                     g2d.setColor(new Color(255, 0, 100));
                 }
                 g2d.fillOval(ab.x, ab.y, 12, 12);
+            }
+        }
+        for (ItemDrop item : itemDrops) {
+            if (item.type == ItemDrop.TYPE_HEAL) {
+                // Efek Glow Hijau untuk HP
+                g2d.setColor(new Color(0, 255, 100, 80));
+                g2d.fillOval(item.x - 4, item.y - 4, 28, 28);
+                
+                g2d.setColor(Color.GREEN);
+                g2d.fillOval(item.x, item.y, 20, 20);
+                g2d.setColor(Color.WHITE);
+                g2d.setFont(new Font("Arial", Font.BOLD, 16));
+                g2d.drawString("+", item.x + 5, item.y + 16); // Simbol Plus
+            } else if (item.type == ItemDrop.TYPE_ENERGY) {
+                // Efek Glow Oranye untuk POW
+                g2d.setColor(new Color(255, 150, 0, 80));
+                g2d.fillOval(item.x - 4, item.y - 4, 28, 28);
+                
+                g2d.setColor(Color.ORANGE);
+                g2d.fillOval(item.x, item.y, 20, 20);
+                g2d.setColor(Color.WHITE);
+                g2d.setFont(new Font("Arial", Font.BOLD, 12));
+                g2d.drawString("P", item.x + 6, item.y + 15); // Simbol Power
             }
         }
 
@@ -739,6 +831,7 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
         alienBullets.clear();
         aliens.clear();
         particles.clear();
+        itemDrops.clear();
         up = down = left = right = false;
     }
 
@@ -790,19 +883,41 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
             this.speed = speed;
         }
     }
+    class ItemDrop {
+        int x, y;
+        int speed = 3;
+        int type; // 0 = Heal, 1 = Energy
+        static final int TYPE_HEAL = 0;
+        static final int TYPE_ENERGY = 1;
 
-    class Particle {
-        double x, y, dx, dy;
-        int lifetime;
-        Color color;
-        Particle(int x, int y, Color color) {
+        ItemDrop(int x, int y, int type) {
             this.x = x;
             this.y = y;
-            this.color = color;
-            Random r = new Random();
-            this.dx = (r.nextDouble() - 0.5) * 6;
-            this.dy = (r.nextDouble() - 0.5) * 6;
-            this.lifetime = r.nextInt(15) + 15;  
+            this.type = type;
         }
+    }
+
+    class Particle {
+    double x, y, dx, dy;
+    int lifetime;
+    Color color;
+
+    Particle(int x, int y, Color color) {
+        this.x = x;
+        this.y = y;
+        this.color = color;
+        Random r = new Random();
+        
+        // dx dibuat kecil agar tidak terlalu menyebar ke samping
+        this.dx = (r.nextDouble() - 0.5) * 2; 
+        
+        // dy dibuat positif (2.0 ke atas) agar partikel "jatuh" ke bawah pesawat
+        this.dy = r.nextDouble() * 3 + 2; 
+        
+        // Lifetime singkat agar jejak tidak terlalu panjang
+        this.lifetime = r.nextInt(10) + 30;  
+    }
+    // Taruh ini di bagian bawah bersama sub-classes lainnya
+    
     }
 }
