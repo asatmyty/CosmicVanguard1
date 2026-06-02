@@ -447,6 +447,29 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
 
                     break;
                     }
+                    if (playerRect.intersects(aRect)) {
+                        playerHp -= 20; // Mengurangi HP player karena tabrakan keras
+                        
+                        // Efek guncangan layar agar benturan terasa dramatis
+                        shakeDuration = 8; 
+                        shakeIntensity = 6;
+                        
+                        // Memicu efek suara ledakan benturan (jika file audio tersedia)
+                        playSoundEffect("sfx_explosion.wav"); 
+                        
+                        // Hasilkan partikel hancurnya alien di posisi benturan
+                        for (int k = 0; k < 15; k++) {
+                            particles.add(new Particle(a.x + 22, a.y + 22, Color.ORANGE));
+                        }
+                        
+                        // Hapus alien yang ditabrak dari layar
+                        aliens.remove(j); 
+                        j--; // Sesuaikan index loop agar tidak melompati alien berikutnya
+                        
+                        // Validasi jika HP Player habis akibat tabrakan
+                        if (playerHp < 0) playerHp = 0; 
+                    }
+                    // ------------------------------------------
                 }
             }
             if (bulletRemoved) continue;
