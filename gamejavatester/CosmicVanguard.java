@@ -3,9 +3,15 @@ import java.awt.*;
 import java.awt.event.*;
 import java.util.ArrayList;
 import java.util.Random;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
+import java.io.IOException;
 // Import tambahan untuk audio library bawaan Java
 import javax.sound.sampled.AudioSystem;
 import javax.sound.sampled.AudioInputStream;
@@ -21,6 +27,7 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
     private static final int STATE_MENU = 0;
     private static final int STATE_GAMEPLAY = 1;
     private static final int STATE_GAMEOVER = 2;
+    private static final int STATE_PAUSE = 3;
     private int gameState = STATE_MENU; 
 
     private Timer timer;
@@ -41,11 +48,18 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
     private int shakeDuration = 0;
     private int shakeIntensity = 0;
     private int energyBar = 0;
+    private int comboCount = 0;
+    private int highScore = 0;
+    private final String HIGHSCORE_FILE = "highscore.txt";
+    private int weaponLevel = 1;
+    private static final int MAX_WEAPON_LEVEL = 3;
     private final int MAX_ENERGY = 100;
+    
 
     private boolean isBluePolarity = true;
     private boolean up, down, left, right;
 
+    private ArrayList<FloatingText> floatingTexts = new ArrayList<>();
     private ArrayList<Bullet> playerBullets = new ArrayList<>();
     private ArrayList<AlienBullet> alienBullets = new ArrayList<>();
     private ArrayList<Alien> aliens = new ArrayList<>();
@@ -63,7 +77,7 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
     private boolean bossActive = false;
     private int bossX = 300, bossY = -100; 
     private int bossHp = 0;
-    private final int BOSS_MAX_HP = 500;
+    private final int BOSS_MAX_HP = 2000;
     private int bossSpeedX = 3;
     private int bossShootCounter = 0;
 
@@ -75,6 +89,7 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
         setBackground(Color.BLACK);
         setFocusable(true);
         addKeyListener(this);
+        loadHighScore();
 
         try {
             playerImage = ImageIO.read(new File("Bplayer_ship.png"));
@@ -93,8 +108,30 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
         playBackgroundMusic("bgm_techno.wav");
 
         for (int i = 0; i < 100; i++) {
-            stars.add(new Star(random.nextInt(WIDTH), random.nextInt(HEIGHT), random.nextInt(3) + 1));
+            int starX = random.nextInt(WIDTH);
+            int starY = random.nextInt(HEIGHT);
+            
+            // Mengatur sistem lapisan paralaks menggunakan peluang acak
+            int layerChance = random.nextInt(100);
+            int speed, size;
+            
+            if (layerChance < 50) {
+                // LAPISAN 1: Jauh Sekali (Sangat lambat, ukuran kecil) - Peluang 50%
+                speed = 1;
+                size = 1;
+            } else if (layerChance < 85) {
+                // LAPISAN 2: Jarak Menengah (Kecepatan sedang, ukuran medium) - Peluang 35%
+                speed = 2;
+                size = 2;
+            } else {
+                // LAPISAN 3: Jarak Dekat (Bergerak cepat, ukuran besar) - Peluang 15%
+                speed = 4;
+                size = 3;
+            }
+            
+            stars.add(new Star(starX, starY, speed, size));
         }
+    
 
         timer = new Timer(16, this);
         timer.start();
@@ -155,9 +192,12 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
     @Override
     public void actionPerformed(ActionEvent e) {
         updateStars();
-        updateParticles();
+
 
         if (gameState == STATE_GAMEPLAY) {
+            updateParticles();
+            updateFloatingTexts();  
+
             if (playerHp > 0) {
                 updatePlayer();
                 updateBullets();
@@ -181,9 +221,15 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
                 checkCollisions();
             } else {
                 gameState = STATE_GAMEOVER;
-                // Opsional: stopBackgroundMusic(); // jika ingin musik berhenti saat game over
+
+                if (score > highScore) {
+                    highScore = score; // Update memori lokal
+                    saveHighScore();   // Tulis rekor baru ke dalam file teks (highscore.txt)
+                }
             }
         }
+        
+        // Catatan: Jika gameState == STATE_PAUSE, update tidak dilakukan, hanya render ulang (repaint)
         repaint();
     }
 
@@ -219,8 +265,28 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
         }
 
         if (shootCooldown == 0) {
-        playerBullets.add(new Bullet(playerX + 12, playerY, isBluePolarity));
-
+            switch (weaponLevel) {
+                case 2:
+                    // Level 2: Double Shot (Dua peluru sejajar di sisi kiri dan kanan pesawat)
+                    playerBullets.add(new Bullet(playerX + -10, playerY, isBluePolarity));
+                    playerBullets.add(new Bullet(playerX + 35, playerY, isBluePolarity));
+                    break;
+                    
+                case 3:
+                    // Level 3: Spread Shot (Tiga peluru: lurus tengah, serong kiri, serong kanan)
+                    // Catatan: Agar peluru bisa bergerak miring, idealnya kelas Bullet memiliki variabel kecepatan horizontal (speedX).
+                    // Namun jika struktur Bullet Anda saat ini hanya melaju lurus ke atas, kita buat 3 tembakan sejajar melebar:
+                    playerBullets.add(new Bullet(playerX - 10, playerY + 10, isBluePolarity)); // Kiri
+                    playerBullets.add(new Bullet(playerX + 12, playerY, isBluePolarity));      // Tengah
+                    playerBullets.add(new Bullet(playerX + 35 , playerY + 10, isBluePolarity)); // Kanan
+                    break;
+                    
+                case 1:
+                default:
+                    // Level 1: Single Shot standar (Satu peluru di tengah)
+                    playerBullets.add(new Bullet(playerX + 12, playerY, isBluePolarity));
+                    break;
+            }
         // memicu suara laser tipis setiap menembak otomatis
         playSoundEffect("sfx_laser.wav");
 
@@ -257,7 +323,7 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
             if (bossShootCounter % 80 == 0) {
                 alienBullets.add(new AlienBullet(bossX + 100, bossY + 110, true));
                 alienBullets.add(new AlienBullet(bossX + 80, bossY + 110, false));
-                alienBullets.add(new AlienBullet(bossX + 120, bossY + 110, false));
+                alienBullets.add(new AlienBullet(bossX + 140, bossY + 110, false));
             }
         }
     }
@@ -284,6 +350,18 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
             }
         }
     }
+    private void updateFloatingTexts() {
+        for (int i = 0; i < floatingTexts.size(); i++) {
+            FloatingText ft = floatingTexts.get(i);
+            ft.lifetime--; // Kurangi sisa waktu hidup teks
+            ft.y -= 1.2;   // Gerakkan teks perlahan ke atas
+
+            // Jika lifetime habis, hapus dari daftar agar tidak membebani memori
+            if (ft.lifetime <= 0) {
+                floatingTexts.remove(i--);
+            }
+        }
+    }
     private void updateBullets() {
         for (int i = 0; i < playerBullets.size(); i++) {
             Bullet b = playerBullets.get(i);
@@ -299,13 +377,43 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
     }
 
     private void updateAliens() {
-        int extraSpeed = score / 2000;
+        int extraSpeed = score / 2000; // Penambahan kesulitan global dari skor dasar
+        
         for (int i = 0; i < aliens.size(); i++) {
             Alien a = aliens.get(i);
-            a.y += (2 + extraSpeed);
-            a.x += Math.sin(a.y * 0.05) * 3;
+            
+            // Logika pergerakan berdasarkan Tipe Alien
+            switch (a.type) {
+                case Alien.TYPE_NORMAL:
+                    // Gerakan sinusoide standar (kode lama Anda)
+                    a.y += (a.speedY + extraSpeed);
+                    a.x += Math.sin(a.y * 0.05) * 3;
+                    break;
+                    
+                case Alien.TYPE_TANKER:
+                    // Bergerak lurus ke bawah dengan sangat lambat
+                    a.y += a.speedY; 
+                    break;
+                    
+                case Alien.TYPE_SCOUT:
+                    // Bergerak lurus ke bawah dengan sangat cepat tanpa meliuk
+                    a.y += (a.speedY + extraSpeed);
+                    break;
+                    
+                case Alien.TYPE_KAMIKAZE:
+                    // Jatuh ke bawah sekaligus mengejar posisi koordinat X milik player
+                    a.y += (a.speedY + extraSpeed);
+                    if (a.x < playerX + 20) {
+                        a.x += 2; // Mengejar ke kanan
+                    } else if (a.x > playerX + 20) {
+                        a.x -= 2; // Mengejar ke kiri
+                    }
+                    break;
+            }
 
-            if (random.nextInt(50) == 1) {
+            // Peluang menembak (Alien Tanker menembak lebih sering, Scout tidak menembak)
+            int shootChance = (a.type == Alien.TYPE_TANKER) ? 30 : 60; 
+            if (a.type != Alien.TYPE_SCOUT && random.nextInt(shootChance) == 1) {
                 boolean bulletColor = random.nextBoolean();
                 alienBullets.add(new AlienBullet(a.x + 18, a.y + 40, bulletColor));
             }
@@ -340,7 +448,14 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
                 } else if (item.type == ItemDrop.TYPE_ENERGY) {
                     energyBar += 20; // Menambah 20 POW
                     if (energyBar > MAX_ENERGY) energyBar = MAX_ENERGY;
+                }else if (item.type == ItemDrop.TYPE_POWERUP) {
+                 // Menaikkan level senjata hingga batas maksimum (Level 3)
+                 if (weaponLevel < MAX_WEAPON_LEVEL) {
+                     weaponLevel++;
+                }else {
+                    score += 500; // Bonus jika level senjata sudah maksimal
                 }
+            }
 
                 // Beri partikel bonus saat mengambil item agar terlihat memuaskan
                 Color effectColor = (item.type == ItemDrop.TYPE_HEAL) ? Color.GREEN : Color.ORANGE;
@@ -358,7 +473,23 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
         int currentSpawnInterval = Math.max(20, 60 - (score / 1000) * 5);
         if (spawnCounter % currentSpawnInterval == 0) {
             int spawnX = random.nextInt(WIDTH - 50);
-            aliens.add(new Alien(spawnX, -40));
+            
+            // Mengacak tipe alien berdasarkan peluang matematika sederhana
+            int chance = random.nextInt(100);
+            int alienType;
+            
+            if (chance < 50) {
+                alienType = Alien.TYPE_NORMAL;
+            } else if (chance < 70) {
+                alienType = Alien.TYPE_TANKER;
+            } else if (chance < 90) {
+                alienType = Alien.TYPE_SCOUT;
+            } else {
+                alienType = Alien.TYPE_KAMIKAZE;
+            }
+            
+            // Memasukkan alien baru dengan parameter tipenya
+            aliens.add(new Alien(spawnX, -40, alienType));
         }
     }
 
@@ -384,8 +515,21 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
                     energyBar += 10;
                     if (energyBar > MAX_ENERGY) energyBar = MAX_ENERGY;
                     score += 10;
+                    comboCount++; // Tambahkan hitungan combo
+                     int bonusScore = 10 * comboCount; // Pengganda skor dasar dikali jumlah combo
+                     score += bonusScore;
+                     Color textColor = isBluePolarity ? Color.CYAN : Color.RED;
+                     floatingTexts.add(new FloatingText(playerX + 10, playerY - 15,
+                         "COMBO X" +
+                          comboCount +
+                           " (+" + bonusScore + ")", textColor, 40));
                 } else {
                     playerHp -= 15;
+                    comboCount = 0;
+                    if (weaponLevel > 1) {
+                         weaponLevel--;
+                         floatingTexts.add(new FloatingText(playerX + 5, playerY - 25, "WEAPON DOWN!", Color.ORANGE, 40));
+                     }
                     if (playerHp <= 0) {
                         playerHp = 0;
                         shakeDuration = 0; 
@@ -432,23 +576,50 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
                     Rectangle aRect = new Rectangle(a.x, a.y, 45, 45);
 
                     if (bRect.intersects(aRect)) {
-                        for (int k = 0; k < 10; k++) {
-                            particles.add(new Particle(a.x + 22, a.y + 22, new Color(150, 0, 255)));
-                        }
-                        aliens.remove(j);
+                        // Efek partikel setiap kali peluru mengenai tubuh alien
+                        for (int k = 0; k < 5; k++) {
+                            particles.add(new Particle(b.x, b.y, new Color(150, 0, 255)));
+                        }   
+                        a.hp -= 10;
                         playerBullets.remove(i--);
-                        score += 20;
                         bulletRemoved = true;
-                        if (random.nextInt(100) < 30) { 
-                        // 0 = Heal (40% dari total drop), 1 = Energy (60% dari total drop)
-                        int itemType = (random.nextInt(100) < 40) ? ItemDrop.TYPE_HEAL : ItemDrop.TYPE_ENERGY;
-                        itemDrops.add(new ItemDrop(a.x + 15, a.y + 15, itemType));
-                    }
 
-                    break;
+                        if (a.hp <= 0) {
+                            // Partikel ledakan besar saat mati
+                            for (int k = 0; k < 10; k++) {
+                                particles.add(new Particle(a.x + 22, a.y + 22, new Color(200, 50, 255)));
+                            }
+                            aliens.remove(j);
+                            if (a.type == Alien.TYPE_TANKER) score += 50;
+                            else if (a.type == Alien.TYPE_KAMIKAZE) score += 30;
+                            else score += 20;
+
+                            // Logika Item Drop
+                            if (random.nextInt(100) < 40) { 
+                            int chance = random.nextInt(100); // Acak angka baru 0-99 untuk menentukan jenis item
+                            int itemType;
+                            if (chance < 40) {
+                                // Peluang 40% (angka 0 s.d 39): Menjadi Item HEAL (Darah)
+                                itemType = ItemDrop.TYPE_HEAL;
+                            } else if (chance < 75) {
+                                // Peluang 35% (angka 40 s.d 74): Menjadi Item ENERGY (Skill Ultimate)
+                                itemType = ItemDrop.TYPE_ENERGY;
+                            } else {
+                                // Peluang 25% (angka 75 s.d 99): Menjadi Item POWERUP (Senjata)
+                                itemType = ItemDrop.TYPE_POWERUP; 
+                            }
+                            itemDrops.add(new ItemDrop(a.x + 15, a.y + 15, itemType));
+                    }
+                        }
+                        break;
                     }
                     if (playerRect.intersects(aRect)) {
                         playerHp -= 20; // Mengurangi HP player karena tabrakan keras
+                        comboCount = 0;
+                        if (weaponLevel > 1) {
+                        weaponLevel--;
+                        floatingTexts.add(new FloatingText(playerX + 5, playerY - 25, "WEAPON DOWN!", Color.ORANGE, 40));
+                    }
                         
                         // Efek guncangan layar agar benturan terasa dramatis
                         shakeDuration = 8; 
@@ -491,7 +662,17 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
 
         g2d.setColor(Color.WHITE);
         for (Star s : stars) {
-            g2d.fillRect(s.x, s.y, s.speed, s.speed);
+            // Memberikan efek pencahayaan berbeda berdasarkan kedalaman lapisan
+            if (s.size == 1) {
+                g2d.setColor(new Color(150, 150, 150)); // Abu-abu redup untuk bintang jauh
+            } else if (s.size == 2) {
+                g2d.setColor(new Color(200, 200, 255)); // Putih kebiruan sedang
+            } else {
+                g2d.setColor(Color.WHITE); // Putih terang bersinar untuk bintang dekat
+            }
+            
+            // Menggambar bintang sesuai koordinat dan ukuran lapisannya
+            g2d.fillRect(s.x, s.y, s.size, s.size);
         }
 
         for (Particle p : particles) {
@@ -503,12 +684,20 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
             drawMenuScreen(g2d);
         } else if (gameState == STATE_GAMEPLAY) {
             drawGameplayScreen(g2d);
+        } else if (gameState == STATE_PAUSE) {
+            drawGameplayScreen(g2d); 
+            drawPauseScreen(g2d);
         } else if (gameState == STATE_GAMEOVER) {
             drawGameOverScreen(g2d);
+            
         }
     }
 
     private void drawMenuScreen(Graphics2D g2d) {
+        for (Star s : stars) {
+            g2d.setColor(s.size == 1 ? new Color(120, 120, 120) : s.size == 2 ? new Color(180, 180, 220) : Color.WHITE);
+            g2d.fillRect(s.x, s.y, s.size, s.size);
+        }
         g2d.setColor(new Color(0, 200, 255));
         g2d.setFont(new Font("Courier New", Font.BOLD, 50));
         g2d.drawString("COSMIC VANGUARD", WIDTH / 2 - 210, HEIGHT / 2 - 120);
@@ -518,6 +707,7 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
         g2d.drawString("Neo-Earth Prototype", WIDTH / 2 - 95, HEIGHT / 2 - 85);
 
         g2d.setColor(Color.YELLOW);
+        g2d.drawString("HIGH SCORE: " + highScore, WIDTH / 2 - 80, HEIGHT / 2 - 40);
         g2d.setFont(new Font("Courier New", Font.BOLD, 22));
         g2d.drawString("TEKAN [ENTER] UNTUK MEMULAI GAME", WIDTH / 2 - 200, HEIGHT / 2 - 10);
 
@@ -537,8 +727,9 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
         g2d.drawString("• Bergerak          : W, A, S, D  atau  Tombol Panah", WIDTH / 2 - 230, HEIGHT / 2 + 100);
         g2d.drawString("• Ganti Mode       : [SPACEBAR] (Plasma Biru / Anti-M Merah)", WIDTH / 2 - 230, HEIGHT / 2 + 120);
         g2d.drawString("• Ultimate Skill    : [X] (Saat Energi POW 100%)", WIDTH / 2 - 230, HEIGHT / 2 + 140);
-        g2d.drawString("• Sistem Shield    : Serap peluru sewarna untuk isi POW & Skor!", WIDTH / 2 - 230, HEIGHT / 2 + 160);
-        g2d.drawString("  Ketika terkena peluru warna berbeda mengurangi HP.", WIDTH / 2 - 213, HEIGHT / 2 + 185);
+        g2d.drawString("• Pause / Jeda Game : [P] atau [ESC]", WIDTH / 2 - 230, HEIGHT / 2 + 160);
+        g2d.drawString("• Sistem Shield    : Serap peluru sewarna untuk isi POW & Skor!", WIDTH / 2 - 230, HEIGHT / 2 + 180);
+        g2d.drawString("                         Ketika terkena peluru warna berbeda mengurangi HP.", WIDTH / 2 - 213, HEIGHT / 2 + 195);
     }   
 
     private void drawGameplayScreen(Graphics2D g2d) {
@@ -572,6 +763,19 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
             g2d.setColor(new Color(180, 0, 255, 100));
             g2d.setStroke(new BasicStroke(5));
             g2d.drawRoundRect(bossX - 5, bossY - 5, 210, 120, 20, 20);
+        }
+        for (FloatingText ft : floatingTexts) {
+            int alpha = ft.getAlpha();
+            if (alpha < 0) alpha = 0;
+            if (alpha > 255) alpha = 255;
+
+            // Buat warna dengan efek memudar (Fade Out)
+            Color fadeColor = new Color(ft.color.getRed(), ft.color.getGreen(), ft.color.getBlue(), alpha);
+            g2d.setColor(fadeColor);
+            
+            // Atur ukuran dan jenis font teks melayang
+            g2d.setFont(new Font("Courier New", Font.BOLD, 16));
+            g2d.drawString(ft.text, (int)ft.x, (int)ft.y);
         }
 
         for (Bullet b : playerBullets) {
@@ -648,6 +852,18 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
                 g2d.setColor(Color.WHITE);
                 g2d.setFont(new Font("Arial", Font.BOLD, 12));
                 g2d.drawString("P", item.x + 6, item.y + 15); // Simbol Power
+            }
+            else if (item.type == ItemDrop.TYPE_POWERUP) {
+                g2d.setColor(Color.ORANGE); // Berikan warna orange terang atau kuning berkilau
+                
+                // Menggambar bentuk berlian/diamond khusus untuk item upgrade agar menonjol
+                int[] xPoints = {item.x + 10, item.x + 20, item.x + 10, item.x};
+                int[] yPoints = {item.y, item.y + 10, item.y + 20, item.y + 10};
+                g2d.fillPolygon(xPoints, yPoints, 4);
+                
+                // Efek border putih luar agar berkilau
+                g2d.setColor(Color.WHITE);
+                g2d.drawPolygon(xPoints, yPoints, 4);
             }
         }
 
@@ -744,6 +960,10 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
     }
 
     private void drawGameOverScreen(Graphics2D g2d) {
+        for (Star s : stars) {
+            g2d.setColor(s.size == 1 ? new Color(120, 120, 120) : s.size == 2 ? new Color(180, 180, 220) : Color.WHITE);
+            g2d.fillRect(s.x, s.y, s.size, s.size);
+        }
         g2d.setColor(Color.RED);
         g2d.setFont(new Font("Arial", Font.BOLD, 50));
         g2d.drawString("GAME OVER", WIDTH / 2 - 145, HEIGHT / 2 - 20);
@@ -754,8 +974,31 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
 
         g2d.setFont(new Font("Courier New", Font.BOLD, 16));
         g2d.setColor(Color.YELLOW);
+        g2d.drawString("REKOR TERTINGGI: " + highScore, WIDTH / 2 - 95, HEIGHT / 2 + 55);
         g2d.drawString("TEKAN 'R' UNTUK MAIN LAGI", WIDTH / 2 - 120, HEIGHT / 2 + 80);
         g2d.drawString("TEKAN 'M' UNTUK KEMBALI KE MENU", WIDTH / 2 - 140, HEIGHT / 2 + 110);
+    }
+    private void drawPauseScreen(Graphics2D g2d) {
+        // 1. Buat efek overlay gelap transparan menutupi layar gameplay belakang
+        g2d.setColor(new Color(0, 0, 0, 150)); // Hitam dengan opasitas 150/255
+        g2d.fillRect(0, 0, WIDTH, HEIGHT);
+
+        // 2. Gambar Kotak Dialog Pause di Tengah Layar
+        g2d.setColor(new Color(0, 200, 255, 50));
+        g2d.fillRoundRect(WIDTH / 2 - 200, HEIGHT / 2 - 80, 400, 140, 15, 15);
+        g2d.setColor(new Color(0, 200, 255));
+        g2d.setStroke(new BasicStroke(3));
+        g2d.drawRoundRect(WIDTH / 2 - 200, HEIGHT / 2 - 80, 400, 140, 15, 15);
+
+        // 3. Tampilkan Teks GAME PAUSED
+        g2d.setFont(new Font("Courier New", Font.BOLD, 36));
+        g2d.setColor(Color.YELLOW);
+        g2d.drawString("GAME PAUSED", WIDTH / 2 - 115, HEIGHT / 2 - 20);
+
+        // 4. Tampilkan Teks Petunjuk untuk Melanjutkan
+        g2d.setFont(new Font("Courier New", Font.BOLD, 14));
+        g2d.setColor(Color.WHITE);
+        g2d.drawString("TEKAN 'P' ATAU 'ESC' UNTUK MELANJUTKAN", WIDTH / 2 - 160, HEIGHT / 2 + 25);
     }
 
     // --- KONTROL KEYBOARD ---
@@ -781,6 +1024,18 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
 
             if (key == KeyEvent.VK_X && energyBar >= MAX_ENERGY) {
                 triggerSuperNovaUltimate();
+            }
+            if (key == KeyEvent.VK_P || key == KeyEvent.VK_ESCAPE) {
+                gameState = STATE_PAUSE;
+            }
+        } 
+        else if (gameState == STATE_PAUSE) {
+            // Kembali bermain jika menekan P atau ESC lagi saat sedang dijeda
+            if (key == KeyEvent.VK_P || key == KeyEvent.VK_ESCAPE) {
+                gameState = STATE_GAMEPLAY;
+                
+                // Reset status tombol bergerak agar pesawat tidak terus meluncur otomatis akibat input yang tertahan
+                up = down = left = right = false; 
             }
         } 
         else if (gameState == STATE_GAMEOVER) {
@@ -838,6 +1093,26 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
         alienBullets.clear();
         energyBar = 0;
     }
+    private void loadHighScore() {
+        try (BufferedReader br = new BufferedReader(new FileReader(HIGHSCORE_FILE))) {
+            String line = br.readLine();
+            if (line != null) {
+                highScore = Integer.parseInt(line.trim());
+            }
+        } catch (IOException | NumberFormatException e) {
+            // Jika file belum ada (baru pertama kali dimainkan), set default ke 0
+            highScore = 0;
+            System.out.println("Belum ada file high score sebelumnya. Di-set ke 0.");
+        }
+    }
+    private void saveHighScore() {
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(HIGHSCORE_FILE))) {
+            bw.write(String.valueOf(highScore));
+            System.out.println("High score berhasil disimpan: " + highScore);
+        } catch (IOException e) {
+            System.out.println("Gagal menyimpan high score: " + e.getMessage());
+        }
+    }
 
     private void restartGame() {
         playerX = 375;
@@ -846,8 +1121,10 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
 
         energyBar = 0;
         score = 0;
+        weaponLevel = 1;
         spawnCounter = 0;
         shootCooldown = 0;
+        comboCount = 0;
 
         isBluePolarity = true;
         bossActive = false;
@@ -855,6 +1132,7 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
         bossHp = 0;
         bossShootCounter = 0;
 
+        floatingTexts.clear();
         playerBullets.clear();
         alienBullets.clear();
         aliens.clear();
@@ -899,24 +1177,65 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
 
     class Alien {
         int x, y;
-        Alien(int x, int y) { this.x = x; this.y = y; }
+        int type;         // 0 = Normal, 1 = Tanker, 2 = Scout, 3 = Kamikaze
+        int hp;           // Nyawa alien
+        double speedX;    // Kecepatan horizontal (opsional untuk pola khusus)
+        double speedY;    // Kecepatan vertikal
+
+        // Definisi Konstanta Tipe Alien
+        static final int TYPE_NORMAL = 0;
+        static final int TYPE_TANKER = 1;
+        static final int TYPE_SCOUT = 2;
+        static final int TYPE_KAMIKAZE = 3;
+
+        Alien(int x, int y, int type) {
+            this.x = x;
+            this.y = y;
+            this.type = type;
+
+            // Inisialisasi status unik berdasarkan tipenya
+            switch (type) {
+                case TYPE_TANKER:
+                    this.hp = 40;        // HP sangat tebal (4x peluru biasa)
+                    this.speedY = 1.0;   // Bergerak lambat ke bawah
+                    break;
+                case TYPE_SCOUT:
+                    this.hp = 10;        // HP standar
+                    this.speedY = 5.0;   // Bergerak sangat cepat lurus ke bawah
+                    break;
+                case TYPE_KAMIKAZE:
+                    this.hp = 10;        // HP standar
+                    this.speedY = 3.0;   // Kecepatan jatuh sedang
+                    break;
+                case TYPE_NORMAL:
+                default:
+                    this.hp = 10;        // Alien standar
+                    this.speedY = 2.0;
+                    break;
+            }
+        }
     }
     
     class Star {
         int x, y;
         int speed;
-        Star(int x, int y, int speed) {
+        int size; // <-- Tambahkan variabel ukuran bintang
+
+        Star(int x, int y, int speed, int size) {
             this.x = x;
             this.y = y;
             this.speed = speed;
+            this.size = size; // Inisialisasi ukuran bintang
         }
     }
+    
     class ItemDrop {
         int x, y;
         int speed = 3;
         int type; // 0 = Heal, 1 = Energy
         static final int TYPE_HEAL = 0;
         static final int TYPE_ENERGY = 1;
+        static final int TYPE_POWERUP = 2;
 
         ItemDrop(int x, int y, int type) {
             this.x = x;
@@ -947,4 +1266,26 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
     }
   
     }
+    class FloatingText {
+    double x, y;
+    String text;
+    Color color;
+    int lifetime; // Durasi teks tampil di layar (dalam hitungan frame)
+    int maxLifetime;
+
+    FloatingText(double x, double y, String text, Color color, int lifetime) {
+        this.x = x;
+        this.y = y;
+        this.text = text;
+        this.color = color;
+        this.lifetime = lifetime;
+        this.maxLifetime = lifetime;
+    }
+
+    // Mengembalikan nilai transparansi (Alpha) berbasis sisa lifetime agar teks memudar (fade out)
+    int getAlpha() {
+        double ratio = (double) lifetime / maxLifetime;
+        return (int) (ratio * 255);
+    }
+}
 }
