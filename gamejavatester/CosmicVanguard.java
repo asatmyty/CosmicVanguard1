@@ -54,6 +54,7 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
     private ArrayList<ItemDrop> itemDrops = new ArrayList<>();
 
     private int score = 0;
+    private int nextBossScore = 5000; // Target poin pertama untuk memunculkan boss
     private Random random = new Random();
     private int spawnCounter = 0;
     private int shootCooldown = 0;
@@ -166,8 +167,10 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
                     shakeDuration--;
                 }
 
-                if (score >= 5000 && !bossActive && bossHp == 0) {
+                if (score >= nextBossScore && !bossActive && bossHp == 0) {
                     triggerBossSpawn();
+                    bossActive = true;
+                    nextBossScore += 5000;
                 }
                 if (bossActive) {
                     updateBoss();
@@ -185,6 +188,7 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
     }
 
     private void triggerBossSpawn() {
+        System.out.println("Peringatan: Boss Datang!");
         bossActive = true;
         bossHp = BOSS_MAX_HP;
         bossX = WIDTH / 2 - 100;
@@ -413,6 +417,7 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
                         score += 2500; 
                         // Memicu ledakan heavy bass saat Boss hancur
                         playSoundEffect("sfx_explosion.wav");
+                        bossActive = false;
 
                         for (int k = 0; k < 60; k++) {
                             particles.add(new Particle(bossX + 100, bossY + 50, new Color(255, 50, 0)));
@@ -534,7 +539,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
             g2d.fillPolygon(xPts, yPts, 3);
         } 
         
-
         if (bossActive) {
             if (bossImage != null) {
                 g2d.drawImage(bossImage, bossX, bossY, 200, 110, null);
@@ -599,6 +603,7 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
                 g2d.fillOval(ab.x, ab.y, 12, 12);
             }
         }
+
         for (ItemDrop item : itemDrops) {
             if (item.type == ItemDrop.TYPE_HEAL) {
                 // Efek Glow Hijau untuk HP
@@ -917,7 +922,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
         // Lifetime singkat agar jejak tidak terlalu panjang
         this.lifetime = r.nextInt(10) + 30;  
     }
-    // Taruh ini di bagian bawah bersama sub-classes lainnya
-    
+  
     }
 }
