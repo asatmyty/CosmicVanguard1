@@ -32,7 +32,7 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
 
     private Timer timer;
 
-    // Status Pemain
+    // --- ASSETS GAMBAR ---
     private BufferedImage playerImage;
     private BufferedImage playerRedImage;
     private BufferedImage alienImage;
@@ -41,7 +41,7 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
     private BufferedImage alienBulletImage;
     private BufferedImage redBulletImage;
     private BufferedImage bossImage;
-
+    
     private int playerX = 375, playerY = 500;
     private int playerSpeed = 6;
     private int playerHp = 100;
@@ -137,8 +137,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
         timer.start();
     }
 
-    // --- AUDIO SYSTEM METHODS ---
-    
     // 1. Method untuk memutar BGM secara terus menerus (Looping)
     private void playBackgroundMusic(String filename) {
         try {
@@ -229,7 +227,6 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
             }
         }
         
-        // Catatan: Jika gameState == STATE_PAUSE, update tidak dilakukan, hanya render ulang (repaint)
         repaint();
     }
 
@@ -1139,7 +1136,7 @@ public class CosmicVanguard extends JPanel implements ActionListener, KeyListene
         particles.clear();
         itemDrops.clear();
         up = down = left = right = false;
-    }
+    }   
 
     public static void main(String[] args) {
         JFrame frame = new JFrame("Cosmic Vanguard: Neo-Earth - Prototype");
